@@ -64,10 +64,59 @@ async function captureScreenshot(tab) {
 
 async function performAnalysis() {
   const tab = await getActiveTab();
+
+  /*
+   * Inject the content scripts.
+   */
   await ensureContentScriptInjected(tab.id);
-  const extraction = await runExtractionInTab(tab.id);
-  const screenshotDataUrl = await captureScreenshot(tab);
-  return { extraction, screenshotDataUrl, tabId: tab.id };
+
+  /*
+   * Extract DOM + PII information.
+   */
+  const extraction =
+    await runExtractionInTab(tab.id);
+
+  /*
+   * Capture the screenshot.
+   */
+  const screenshotDataUrl =
+    await captureScreenshot(tab);
+
+  console.log(
+    "[background] Screenshot captured:",
+    typeof screenshotDataUrl,
+    screenshotDataUrl?.substring(0, 30)
+  );
+
+  /*
+   * Run YuNet on the SAME screenshot.
+   *
+   * detectFacesInScreenshot() sends the screenshot
+   * to the offscreen document.
+   */
+  const faces =
+    await detectFacesInScreenshot(
+      screenshotDataUrl
+    );
+
+  console.log(
+    "[background] Detected faces:",
+    JSON.stringify(
+      faces,
+      null,
+      2
+    )
+  );
+
+  /*
+   * Return EVERYTHING to popup.
+   */
+  return {
+    extraction,
+    screenshotDataUrl,
+    faces,
+    tabId: tab.id
+  };
 }
 
 async function performAction(action, args) {
@@ -128,6 +177,58 @@ async function forwardToOffscreen(text) {
   return chrome.runtime.sendMessage({ target: 'offscreen', type: 'RUN_NER_INFERENCE', text });
 }
 
+async function detectFacesInScreenshot(
+  screenshotDataUrl
+) {
+
+  await ensureOffscreenDocument();
+
+  return new Promise(
+    (resolve, reject) => {
+
+      chrome.runtime.sendMessage(
+        {
+          target: 'offscreen',
+          type: 'RUN_FACE_DETECTION',
+          screenshot:
+            screenshotDataUrl
+        },
+        (response) => {
+
+          if (
+            chrome.runtime.lastError
+          ) {
+            reject(
+              new Error(
+                chrome.runtime.lastError.message
+              )
+            );
+            return;
+          }
+
+          if (
+            !response ||
+            !response.ok
+          ) {
+            reject(
+              new Error(
+                response?.error ||
+                'Face detection failed.'
+              )
+            );
+            return;
+          }
+
+          resolve(
+            response.faces || []
+          );
+        }
+      );
+    }
+  );
+}
+
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Ignore anything addressed to the offscreen document — let its own
   // listener (offscreen/offscreen.js) handle it instead. Without this
@@ -167,6 +268,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(response || { ok: false, error: 'No response from offscreen document.' });
           break;
         }
+        case 'RUN_FACE_DETECTION': {
+          const faces =
+            await detectFacesInScreenshot(
+                message.screenshot
+            );
+
+          console.log(
+            "[background] YuNet faces:",
+            faces
+            );
+
+          sendResponse({
+            ok: true,
+            faces: faces
+            });
+          break;
+        }
         default:
           sendResponse({ ok: false, error: `Unknown message type: ${message.type}` });
       }
@@ -176,3 +294,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   })();
   return true; // keep the message channel open for the async response
 });
+

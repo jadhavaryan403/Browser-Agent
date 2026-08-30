@@ -105,19 +105,32 @@ els.saveBackendBtn.addEventListener('click', async () => {
 // ---------- Messaging to background ----------
 
 function sendMessage(message) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
+  return new Promise(
+      (resolve, reject) => {
+
+          chrome.runtime.sendMessage(
+              message,
+              response => {
+
+                  if (
+                      chrome.runtime.lastError
+                  ) {
+                      reject(
+                          new Error(
+                              chrome.runtime
+                                  .lastError
+                                  .message
+                          )
+                      );
+
+                      return;
+                  }
+
+                  resolve(response);
+              }
+          );
       }
-      if (!response || !response.ok) {
-        reject(new Error((response && response.error) || 'Unknown error'));
-        return;
-      }
-      resolve(response.data);
-    });
-  });
+  );
 }
 
 function delay(ms) {
@@ -172,19 +185,320 @@ function renderSensitiveList(sensitiveItems) {
   }
 }
 
-async function drawRedactedScreenshot(screenshotDataUrl, sensitiveItems, viewport) {
-  const { canvas, dataUrl } = await window.__BA_Redactor.redactScreenshot(
-    screenshotDataUrl,
-    sensitiveItems,
-    viewport,
-    4 // padding, per spec section 11
+async function drawRedactedScreenshot(
+  screenshotDataUrl,
+  sensitiveItems,
+  viewport,
+  faceBoxes = []
+) {
+  console.log(
+    "[redaction] sensitive items:",
+    sensitiveItems?.length || 0
   );
-  const target = els.screenshotCanvas;
-  target.width = canvas.width;
-  target.height = canvas.height;
-  target.getContext('2d').drawImage(canvas, 0, 0);
-  return dataUrl; // this is what gets sent to the backend — already redacted
+
+  console.log(
+    "[redaction] face boxes:",
+    JSON.stringify(faceBoxes, null, 2)
+  );
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+
+    img.onload = () => {
+      const canvas =
+        document.createElement("canvas");
+
+      canvas.width =
+        img.naturalWidth;
+
+      canvas.height =
+        img.naturalHeight;
+
+      const ctx =
+        canvas.getContext("2d");
+
+      if (!ctx) {
+        reject(
+          new Error(
+            "Could not create 2D canvas context"
+          )
+        );
+        return;
+      }
+
+      console.log(
+        "[redaction] Canvas:",
+        canvas.width,
+        "x",
+        canvas.height
+      );
+
+      /*
+       * Draw original screenshot.
+       */
+      ctx.drawImage(
+        img,
+        0,
+        0
+      );
+
+      /*
+       * =====================================================
+       * 1. REDACT DOM PII
+       * =====================================================
+       */
+
+      ctx.fillStyle = "#000000";
+
+      for (
+        const item
+        of (sensitiveItems || [])
+      ) {
+        if (!item?.bbox) {
+          continue;
+        }
+
+        const box =
+          window.__BA_CoordinateMapper
+            .mapDomBoxToScreenshot(
+              item.bbox,
+              viewport,
+              canvas.width,
+              canvas.height,
+              4
+            );
+
+        if (
+          Number.isFinite(box.x) &&
+          Number.isFinite(box.y) &&
+          box.width > 0 &&
+          box.height > 0
+        ) {
+          ctx.fillRect(
+            box.x,
+            box.y,
+            box.width,
+            box.height
+          );
+        }
+      }
+
+      /*
+       * =====================================================
+       * 2. REDACT FACES
+       * =====================================================
+       *
+       * YuNet already returns coordinates in the
+       * ORIGINAL SCREENSHOT coordinate system.
+       *
+       * Therefore:
+       *
+       * DO NOT use viewport.
+       * DO NOT use CoordinateMapper.
+       * DO NOT multiply by devicePixelRatio.
+       */
+
+      console.log(
+        `[redaction] Redacting ${faceBoxes.length} faces`
+      );
+
+      for (
+        const face
+        of (faceBoxes || [])
+      ) {
+        if (
+          !face ||
+          !Number.isFinite(face.x) ||
+          !Number.isFinite(face.y) ||
+          !Number.isFinite(face.width) ||
+          !Number.isFinite(face.height)
+        ) {
+          console.warn(
+            "[redaction] Invalid face:",
+            face
+          );
+          continue;
+        }
+
+        /*
+         * Padding around detected face.
+         */
+        const padding = 10;
+
+        let x =
+          Math.floor(
+            face.x - padding
+          );
+
+        let y =
+          Math.floor(
+            face.y - padding
+          );
+
+        let right =
+          Math.ceil(
+            face.x +
+            face.width +
+            padding
+          );
+
+        let bottom =
+          Math.ceil(
+            face.y +
+            face.height +
+            padding
+          );
+
+        /*
+         * Clamp coordinates.
+         */
+        x =
+          Math.max(
+            0,
+            Math.min(
+              canvas.width,
+              x
+            )
+          );
+
+        y =
+          Math.max(
+            0,
+            Math.min(
+              canvas.height,
+              y
+            )
+          );
+
+        right =
+          Math.max(
+            x,
+            Math.min(
+              canvas.width,
+              right
+            )
+          );
+
+        bottom =
+          Math.max(
+            y,
+            Math.min(
+              canvas.height,
+              bottom
+            )
+          );
+
+        const width =
+          right - x;
+
+        const height =
+          bottom - y;
+
+        if (
+          width <= 0 ||
+          height <= 0
+        ) {
+          continue;
+        }
+
+        console.log(
+          "[redaction] DRAWING FACE:",
+          {
+            x,
+            y,
+            width,
+            height,
+            confidence:
+              face.confidence
+          }
+        );
+
+        /*
+         * Black redaction rectangle.
+         */
+        ctx.fillStyle =
+          "#000000";
+
+        ctx.fillRect(
+          x,
+          y,
+          width,
+          height
+        );
+      }
+
+      /*
+       * =====================================================
+       * 3. EXPORT
+       * =====================================================
+       */
+
+      const dataUrl =
+        canvas.toDataURL(
+          "image/png"
+        );
+
+      console.log(
+        "[redaction] Redacted screenshot generated:",
+        dataUrl.substring(
+          0,
+          30
+        )
+      );
+
+      resolve({
+        canvas,
+        dataUrl
+      });
+    };
+
+    img.onerror = (error) => {
+      console.error(
+        "[redaction] Screenshot load failed:",
+        error
+      );
+
+      reject(
+        new Error(
+          "Could not load screenshot"
+        )
+      );
+    };
+
+    /*
+     * Ensure the screenshot is actually
+     * a data URL before loading it.
+     */
+    if (
+      typeof screenshotDataUrl !==
+      "string"
+    ) {
+      reject(
+        new Error(
+          `Screenshot must be a string, received ${typeof screenshotDataUrl}`
+        )
+      );
+      return;
+    }
+
+    if (
+      !screenshotDataUrl.startsWith(
+        "data:image/"
+      )
+    ) {
+      reject(
+        new Error(
+          "Invalid screenshot data URL"
+        )
+      );
+      return;
+    }
+
+    img.src =
+      screenshotDataUrl;
+  });
 }
+
 
 function findElementLabel(elements, elementId) {
   const el = elements.find((e) => e.id === elementId);
@@ -222,29 +536,149 @@ function buildActionArgs(decision) {
 
 async function analyzeCurrentPage() {
   agentController.beginPageAnalysis();
-  const { extraction, screenshotDataUrl } = await sendMessage({ type: 'ANALYZE_PAGE' });
+
+  const response = await sendMessage({
+    type: 'ANALYZE_PAGE'
+  });
+
+  console.log("[popup] ANALYZE_PAGE RESPONSE:", response);
+
+  if (!response?.ok) {
+    throw new Error(
+      response?.error || "Page analysis failed."
+    );
+  }
+
+  /*
+   * IMPORTANT:
+   * service-worker returns:
+   *
+   * {
+   *   ok: true,
+   *   data: {
+   *     extraction,
+   *     screenshotDataUrl,
+   *     faces,
+   *     tabId
+   *   }
+   * }
+   */
+  const {
+    extraction,
+    screenshotDataUrl,
+    faces
+  } = response.data;
 
   agentController.onDomExtracted();
   agentController.onPiiDetected();
   agentController.onScreenshotCaptured();
 
-  const redactedDataUrl = await drawRedactedScreenshot(
-    screenshotDataUrl,
-    extraction.sensitiveItems,
-    extraction.viewport
+  console.log(
+    "[popup] Screenshot:",
+    typeof screenshotDataUrl,
+    screenshotDataUrl?.substring(0, 50)
   );
+
+  console.log(
+    "[popup] FACE BOXES FROM BACKGROUND:",
+    JSON.stringify(
+      faces,
+      null,
+      2
+    )
+  );
+
+  const faceBoxes =
+    Array.isArray(faces)
+      ? faces
+      : [];
+
+  console.log(
+    "[popup] FACE BOXES FOR REDACTION:",
+    JSON.stringify(
+      faceBoxes,
+      null,
+      2
+    )
+  );
+
+  const redactedResult =
+    await drawRedactedScreenshot(
+      screenshotDataUrl,
+      extraction.sensitiveItems,
+      extraction.viewport,
+      faceBoxes
+    );
+
+  const redactedDataUrl =
+    redactedResult.dataUrl;
+  
+  /*
+   * Display the redacted screenshot in the popup.
+   */
+  const displayCanvas = els.screenshotCanvas;
+  
+  if (displayCanvas) {
+    const sourceCanvas = redactedResult.canvas;
+  
+    displayCanvas.width =
+      sourceCanvas.width;
+  
+    displayCanvas.height =
+      sourceCanvas.height;
+  
+    const displayCtx =
+      displayCanvas.getContext("2d");
+  
+    if (displayCtx) {
+      displayCtx.clearRect(
+        0,
+        0,
+        displayCanvas.width,
+        displayCanvas.height
+      );
+  
+      displayCtx.drawImage(
+        sourceCanvas,
+        0,
+        0
+      );
+    }
+  }
+  
   agentController.onScreenshotRedacted();
 
-  els.countElements.textContent = extraction.counts.interactiveElements;
-  els.countSensitive.textContent = extraction.counts.sensitiveItems;
-  renderElementsList(extraction.elements);
-  renderSensitiveList(extraction.sensitiveItems);
-  els.visibleTextJson.textContent = JSON.stringify(extraction.visibleText, null, 2);
+  els.countElements.textContent =
+    extraction.counts.interactiveElements;
+
+  els.countSensitive.textContent =
+    extraction.counts.sensitiveItems;
+
+  renderElementsList(
+    extraction.elements
+  );
+
+  renderSensitiveList(
+    extraction.sensitiveItems
+  );
+
+  els.visibleTextJson.textContent =
+    JSON.stringify(
+      extraction.visibleText,
+      null,
+      2
+    );
+
   els.detailsPanel.hidden = false;
 
-  agentController.evaluateReadiness(extraction);
+  agentController.evaluateReadiness(
+    extraction
+  );
 
-  return { extraction, redactedDataUrl };
+  return {
+    extraction,
+    redactedDataUrl
+  };
 }
 
 /** Waits for the user to fill in the backend-requested fields, via the existing userInputManager UI. */
