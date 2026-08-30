@@ -1,0 +1,69 @@
+{
+  "manifest_version": 3,
+  "name": "Privacy-Preserving Browser Agent (Local)",
+  "version": "0.1.0",
+  "description": "Local-only browser agent: extracts interactive DOM elements, detects PII on-device, and shows a redacted screenshot. No data ever leaves the browser.",
+
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "offscreen"
+  ],
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+
+  "host_permissions": [
+    "<all_urls>"
+  ],
+
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Browser Agent (Local)",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "models/ner/*",
+        "lib/*.js",
+        "lib/*.wasm",
+        "lib/*.mjs"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "lib/ort.min.js",
+        "content/piiDetector.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+
+  "minimum_chrome_version": "100"
+}

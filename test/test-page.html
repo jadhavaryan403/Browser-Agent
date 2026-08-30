@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Browser Agent Test Page</title>
+<style>
+  body { font-family: sans-serif; max-width: 700px; margin: 40px auto; line-height: 1.6; }
+  section { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  h2 { margin-top: 0; font-size: 16px; }
+  .hidden-display { display: none; }
+  .hidden-visibility { visibility: hidden; }
+  .zero-size { width: 0; height: 0; overflow: hidden; }
+  .offscreen { position: absolute; left: -9999px; top: -9999px; }
+  .clickable-card { cursor: pointer; border: 1px solid #6c8dff; padding: 10px; border-radius: 6px; }
+  #dynamicContainer button { margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>Browser Agent — Test / Demo Page</h1>
+  <p>Load this page, open the extension popup, enter any task, and click "Analyze Page".</p>
+
+  <section>
+    <h2>Buttons &amp; Links</h2>
+    <button id="searchBtn">Search</button>
+    <input type="button" value="Legacy Button" />
+    <input type="submit" value="Submit" />
+    <a href="https://example.com">Example link</a>
+    <a href="https://example.com/reset?token=abc123&email=john@example.com">Sensitive link (should be flagged)</a>
+  </section>
+
+  <section>
+    <h2>Form Controls</h2>
+    <input type="search" placeholder="Search products…" />
+    <input type="email" placeholder="you@example.com" />
+    <input type="tel" placeholder="Phone" />
+    <input type="password" placeholder="Password (value never captured)" />
+    <textarea placeholder="Notes"></textarea>
+    <select>
+      <option>Option A</option>
+      <option>Option B</option>
+    </select>
+    <label><input type="checkbox" /> Subscribe</label>
+    <label><input type="radio" name="r" /> Choice 1</label>
+    <label><input type="radio" name="r" /> Choice 2</label>
+  </section>
+
+  <section>
+    <h2>Personal Info (should be detected + redacted)</h2>
+    <p>Name: John Doe</p>
+    <p>Email: john@example.com</p>
+    <p>Phone: +91 9876543210</p>
+    <p>Card: 4111 1111 1111 1111</p>
+    <p>Server IP: 192.168.1.42</p>
+    <p>This is a normal sentence with no sensitive data at all.</p>
+  </section>
+
+  <section>
+    <h2>Pre-filled Form Values (visible on screen, NOT DOM text nodes)</h2>
+    <p>These values are painted by the browser's native form-control rendering, not regular text nodes — this is the case the redactor must catch separately from the text-node PII scan above.</p>
+    <input type="text" id="prefilledEmail" placeholder="Email on file" value="jane.doe@example.com" style="width: 260px;" />
+    <br /><br />
+    <textarea id="prefilledNotes" rows="2" style="width: 260px;">Call me at +91 9876500000 re: order</textarea>
+    <br /><br />
+    <label for="savedCard">Saved payment method:</label>
+    <select id="savedCard">
+      <option value="opt1">John Doe — Visa ending 4111111111111111</option>
+      <option value="opt2">No saved card</option>
+    </select>
+    <br /><br />
+    <label for="fullName">Full name:</label>
+    <input type="text" id="fullName" value="John Doe" placeholder="Full name" />
+  </section>
+
+  <section>
+    <h2>Custom Clickable Element</h2>
+    <div class="clickable-card" role="button" tabindex="0">I'm a clickable div (role="button")</div>
+  </section>
+
+  <section>
+    <h2>Hidden / Off-screen (should be EXCLUDED)</h2>
+    <button class="hidden-display">Hidden via display:none</button>
+    <button class="hidden-visibility">Hidden via visibility:hidden</button>
+    <button class="zero-size">Zero size button</button>
+    <button class="offscreen">Off-screen button</button>
+    <p class="hidden-display">Secret: 555-000-1111 (should never be extracted)</p>
+  </section>
+
+  <section id="dynamicContainer">
+    <h2>Dynamic Content</h2>
+    <p>Click below to add a new button after a delay (tests MutationObserver handling).</p>
+    <button id="addDynamicBtn">Add dynamic element</button>
+  </section>
+
+  <script>
+    document.getElementById('addDynamicBtn').addEventListener('click', () => {
+      setTimeout(() => {
+        const btn = document.createElement('button');
+        btn.textContent = 'I appeared dynamically';
+        document.getElementById('dynamicContainer').appendChild(btn);
+      }, 500);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Browser Agent</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <main class="ba-app">
+    <header class="ba-header">
+      <h1>Browser Agent</h1>
+      <button id="settingsBtn" class="ba-icon-btn" title="Backend settings" aria-label="Backend settings">⚙️</button>
+    </header>
+
+    <section id="settingsPanel" class="ba-section" hidden>
+      <label class="ba-label" for="backendUrlInput">Backend endpoint</label>
+      <input id="backendUrlInput" type="text" placeholder="http://localhost:8787/api/agent/decide" />
+      <div class="ba-settings-row">
+        <button id="saveBackendBtn" class="ba-secondary-btn">Save</button>
+        <span id="backendSavedNote" class="ba-status" hidden>Saved.</span>
+      </div>
+      <p class="ba-hint">
+        Only the redacted screenshot and a sanitized element list are sent here — never raw PII, never the
+        original screenshot.
+      </p>
+    </section>
+
+    <section class="ba-section ba-chat-section">
+      <div id="chatLog" class="ba-chat-log" aria-live="polite"></div>
+
+      <div id="userInputSection" class="ba-chat-inline-form" hidden>
+        <div id="userInputContainer"></div>
+      </div>
+
+      <div class="ba-chat-input-row">
+        <textarea id="taskInput" rows="2" placeholder="e.g. Find wireless headphones under ₹5000"></textarea>
+        <button id="sendBtn" class="ba-primary-btn">Send</button>
+      </div>
+      <p id="errorLine" class="ba-error" hidden></p>
+    </section>
+
+    <details id="detailsPanel" class="ba-section ba-details-panel" hidden>
+      <summary>Latest Page Analysis</summary>
+
+      <div class="ba-summary">
+        <div><strong id="countElements">0</strong><span> interactive elements</span></div>
+        <div><strong id="countSensitive">0</strong><span> sensitive items</span></div>
+      </div>
+
+      <div class="ba-section-title">Redacted Screenshot</div>
+      <canvas id="screenshotCanvas" class="ba-screenshot"></canvas>
+
+      <details class="ba-details">
+        <summary>Interactive Elements</summary>
+        <div id="elementsList" class="ba-list"></div>
+        <pre id="elementsJson" class="ba-json"></pre>
+      </details>
+
+      <details class="ba-details">
+        <summary>Visible Text</summary>
+        <pre id="visibleTextJson" class="ba-json"></pre>
+      </details>
+
+      <details class="ba-details">
+        <summary>Sensitive Information Detected</summary>
+        <div id="sensitiveList" class="ba-list"></div>
+      </details>
+
+      <details class="ba-details">
+        <summary>Agent State</summary>
+        <div id="agentStateLine" class="ba-mono">IDLE</div>
+      </details>
+    </details>
+  </main>
+
+  <!-- Shared utils (order matters: dependencies first) -->
+  <script src="../utils/logger.js"></script>
+  <script src="../utils/geometry.js"></script>
+
+  <!-- Agent architecture (state machine, task manager, controller, backend) -->
+  <script src="../agent/stateManager.js"></script>
+  <script src="../agent/taskManager.js"></script>
+  <script src="../agent/agentBackend.js"></script>
+  <script src="../agent/agentController.js"></script>
+  <script src="../agent/userInputManager.js"></script>
+
+  <!-- Screenshot coordinate mapping + redaction (popup owns the canvas) -->
+  <script src="../content/coordinateMapper.js"></script>
+  <script src="../content/redactor.js"></script>
+
+  <script src="popup.js"></script>
+</body>
+</html>
